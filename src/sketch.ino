@@ -20,6 +20,7 @@
 #define PB_OK 32
 #define PB_UP 33
 #define PB_DOWN 35
+#define PB_SNOOZE 25
 #define DHTPIN 12
 
 #define MIN_HEALTHY_TEMPERATURE 24 // Minimum temperature for healthy range
@@ -65,7 +66,7 @@ int notes[] = {C, D, E, F, G, A, B, C_H};
 
 int current_mode = 0;
 int max_modes = 6;
-String modes[] = {"1 - Set Time Zone", "2 - Set Alarm 1", "3 - Set Alarm 2", "4 - Disable Alarm", "5 - View Active Alarms", "6 - Delete Alarm"};
+String modes[] = {"1 - Set Time Zone", "2 - Set Alarm 1", "3 - Set Alarm 2", "4 - Enable/Disable Alarm", "5 - View Active Alarms", "6 - Delete Alarm"};
 
 void setup() {
   // put your setup code here, to run once:
@@ -75,6 +76,7 @@ void setup() {
   pinMode(PB_OK, INPUT);
   pinMode(PB_UP, INPUT);
   pinMode(PB_DOWN, INPUT);
+  pinMode(PB_SNOOZE, INPUT);
 
   dhtSensor.setup(DHTPIN, DHTesp::DHT22);
 
@@ -127,7 +129,6 @@ void print_line(String text, int column, int row, int textSize) {
 
   display.display();
 }
-
 
 // Helper function to format integers with leading zeros
 String format_with_zeros(int value, int digits) {
@@ -187,10 +188,9 @@ void update_time() {
   years = atoi(timeYear);
 }
 
-
-void ring_alarm() {
+void ring_alarm(int alarm) {
   display.clearDisplay();
-  print_line("MEDICINE TIME!", 0, 0, 2);
+  print_line("MEDICINE TIME!", 0, 20, 2);
   digitalWrite(LED_1, HIGH);
 
   bool break_happened = false;
@@ -201,8 +201,17 @@ void ring_alarm() {
       if (digitalRead(PB_CANCEL) == LOW) {
         delay(200);
         break_happened = true;
+        alarm_triggered[alarm] = true;
         break;
       }
+      if (digitalRead(PB_SNOOZE) == LOW) {
+        delay(200);
+        snooze_alarm(alarm);
+        break_happened = true;
+        alarm_triggered[alarm] = false;
+        break;
+      }
+
       tone(BUZZER, notes[i]);
       delay(500);
       noTone(BUZZER);
@@ -221,8 +230,7 @@ void update_time_with_check_alarm() {
   if (alarm_enabled) {
     for (int i = 0; i < n_alarms; i++) {
       if (!alarm_triggered[i] && hours == alarm_hours[i] && minutes == alarm_minutes[i]) {
-        ring_alarm();
-        alarm_triggered[i] = true;
+        ring_alarm(i);
       }
     }
   }
@@ -277,6 +285,7 @@ void go_to_menu() {
     }
 
     else if (pressed == PB_CANCEL) {
+      current_mode = 0; // next time the user open the menu, it will start from the first mode
       delay(100);
       break;
     }
@@ -434,6 +443,7 @@ void set_time_zone() {
 void set_alarm(int alarm) {
   int temp_hour = alarm_hours[alarm];
   int temp_minute = alarm_minutes[alarm];
+  alarm_triggered[alarm] = false;
 
   while (true) {
     display.clearDisplay();
@@ -523,40 +533,60 @@ void run_mode(int mode) {
 void check_temp(){
   TempAndHumidity data = dhtSensor.getTempAndHumidity();
   if (data.temperature > MAX_HEALTHY_TEMPERATURE){
-    //display.clearDisplay();
     print_line("TEMP HIGH", 0, 40, 1);
   }
   else if (data.temperature < MIN_HEALTHY_TEMPERATURE){
-    //display.clearDisplay();
     print_line("TEMP LOW", 0, 40, 1);
   }
+  else {
+    print_line("TEMP OK", 0, 40, 1);
+  }
   if (data.humidity > MAX_HEALTHY_HUMIDITY){
-    //display.clearDisplay();
     print_line("HUMIDITY HIGH", 0, 50, 1);
   }
   else if (data.humidity < MIN_HEALTHY_HUMIDITY){
-    //display.clearDisplay();
     print_line("HUMIDITY LOW", 0, 50, 1);
   }
+  else {
+    print_line("HUMIDITY OK", 0, 50, 1);
+  }
+}
+
+void snooze_alarm(int alarm) {
+    update_time();
+
+    alarm_minutes[alarm] += 5;
+    if (alarm_minutes[alarm] >= 60) {
+      alarm_hours[alarm] += 1;
+      alarm_minutes[alarm] = alarm_minutes[alarm] % 60;
+      alarm_hours[alarm] = alarm_hours[alarm] % 24;
+    }
+
+    display.clearDisplay();
+    print_line("Alarm snoozed for 5 minutes!", 0, 0, 2);
+    delay(2000);
 }
 
 void view_active_alarms() {
     display.clearDisplay();
-    print_line("Active Alarms", 0, 0, 2);
-    delay(1000);
+    print_line("Viewing Alarms", 0, 0, 1);
 
-    for (int i = 0; i < n_alarms; i++) {
-      if (alarm_enabled && alarm_triggered[i] == false) {
-        print_line("Alarm " + String(i + 1) + " at " + String(alarm_hours[i]) + ":" + String(alarm_minutes[i]), 0, 20 + (i * 20), 1);
-      }
-      else if (alarm_triggered[i] == true) {
-        print_line("Alarm " + String(i + 1) + " is already Triggered", 0, 20 + (i * 20), 1);
-      }
-      else if (!alarm_enabled && alarm_triggered[i] == false) {
-        print_line("Alarm " + String(i + 1) + " is Disabled", 0, 20 + (i * 20), 1);
+    unsigned long startTime= millis();
+
+    while (millis() - startTime < 10000 && digitalRead(PB_CANCEL) == HIGH) {
+      for (int i = 0; i < n_alarms; i++) {
+        if (alarm_enabled && alarm_triggered[i] == false) {
+          print_line("Alarm " + String(i + 1) + " at " + format_with_zeros(alarm_hours[i], 2) + ":" + format_with_zeros(alarm_minutes[i], 2), 0, 20 + (i * 20), 1);
+        }
+        else if (alarm_triggered[i] == true) {
+          print_line("Alarm " + String(i + 1) + " is already Triggered", 0, 20 + (i * 20), 1);
+        }
+        else if (!alarm_enabled && alarm_triggered[i] == false) {
+          print_line("Alarm " + String(i + 1) + " is Disabled", 0, 20 + (i * 20), 1);
+        }
       }
     }
-    delay(2000);
+    go_to_menu();
 }
 
 void delete_alarm(){
