@@ -43,6 +43,7 @@ int seconds = 0;
 int UTC_OFFSET = 19800; // Offset for Colombo: UTC+5:30 (5 * 3600 + 30 * 60 = 19800 seconds)
 int UTC_OFFSET_HOURS = 5;
 int UTC_OFFSET_MINUTES = 30;
+bool OFFSET_NEGATIVE = false; // Flag to indicate if the offset is negative
 
 unsigned long timeNow = 0;
 unsigned long timeLast = 0;
@@ -67,7 +68,7 @@ int notes[] = {C, D, E, F, G, A, B, C_H};
 
 int current_mode = 0;
 int max_modes = 6;
-String modes[] = {"1 - Set Time Zone", "2 - Set Alarm 1", "3 - Set Alarm 2", "4 - Enable/Disable Alarm", "5 - View Active Alarms", "6 - Delete Alarm"};
+String modes[] = {"1 - Set Time Zone", "2 - Set Alarm 1", "3 - Set Alarm 2", "4 - Enable/Disable Alarms", "5 - View Active Alarms", "6 - Delete Alarm"};
 
 void setup() {
   // put your setup code here, to run once:
@@ -159,7 +160,8 @@ void print_time_now() {
   print_line(":", 75, 20, 2);
   print_line(format_with_zeros(seconds, 2), 85, 15, 2);
 
-  print_line("UTC OFFSET: " + format_with_zeros(UTC_OFFSET_HOURS, 2) + ":" + format_with_zeros(UTC_OFFSET_MINUTES, 2), 0, 35, 1);
+  String signStr = OFFSET_NEGATIVE ? "-" : "+";
+  print_line("UTC OFFSET: " + signStr + format_with_zeros(UTC_OFFSET_HOURS, 2) + ":" + format_with_zeros(UTC_OFFSET_MINUTES, 2), 0, 35, 1);
 }
 
 void update_time() {
@@ -366,6 +368,29 @@ void set_time_zone() {
   int utc_hour_offset = UTC_OFFSET_HOURS;
   int utc_minute_offset = UTC_OFFSET_MINUTES;
   bool is_time_set = false;
+  bool offset_negative = OFFSET_NEGATIVE;      
+
+  // Select offset sign
+  while (true) {
+    display.clearDisplay();
+    String signStr = offset_negative ? "-" : "+";
+    print_line("UTC offset sign: " + signStr, 0, 0, 2);
+    print_line("UP/DOWN to toggle", 0, 40, 1);
+    print_line("OK to confirm", 0, 50, 1);
+    int pressed = wait_for_button_press();
+    if (pressed == PB_UP || pressed == PB_DOWN) {
+      offset_negative = !offset_negative;
+      delay(100);
+    }
+    else if (pressed == PB_OK) {
+      delay(100);
+      break;
+    }
+    else if (pressed == PB_CANCEL) {
+      delay(100);
+      break;
+    }
+  }
 
   while (true) {
     display.clearDisplay();
@@ -430,8 +455,13 @@ void set_time_zone() {
   // Update the global variables with the new values
   UTC_OFFSET_HOURS = utc_hour_offset;
   UTC_OFFSET_MINUTES = utc_minute_offset;
+  OFFSET_NEGATIVE = offset_negative;
 
   UTC_OFFSET = UTC_OFFSET_HOURS * 3600 + UTC_OFFSET_MINUTES * 60;
+  if (OFFSET_NEGATIVE) {
+    UTC_OFFSET = -UTC_OFFSET;
+  }
+
   configTime(UTC_OFFSET, UTC_OFFSET_DST, NTP_SERVER);
 
   display.clearDisplay();
@@ -527,7 +557,7 @@ void run_mode(int mode) {
   }
 
   else if (mode == 3) {
-    alarm_enabled = false;
+    alarm_enabled = !alarm_enabled;
   }
 
   else if (mode == 4) {
@@ -600,7 +630,7 @@ void view_active_alarms() {
           print_line("Alarm " + String(i + 1) + " is already Triggered", 0, 20 + (i * 20), 1);
         }
         else if (!alarm_enabled && alarm_triggered[i] == false) {
-          print_line("Alarm " + String(i + 1) + " is Disabled", 0, 20 + (i * 20), 1);
+          print_line("Alarm " + String(i + 1) + " at " + format_with_zeros(alarm_hours[i], 2) + ":" + format_with_zeros(alarm_minutes[i], 2) + " is Disabled", 0, 20 + (i * 20), 1);
         }
       }
     }
@@ -613,7 +643,7 @@ void delete_alarm(){
 
     while (!selectionMade) {
       display.clearDisplay();
-      print_line("Enter Alarm to Delete: " + String(alarm_to_delete + 1), 0, 0, 2);
+      print_line("Enter Alarm to Delete: " + String(alarm_to_delete + 1), 0, 0, 1);
       print_line("Press OK to delete", 0, 40, 1);
       print_line("or CANCEL to exit", 0, 50, 1);
       int pressed = wait_for_button_press();
