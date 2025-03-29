@@ -40,7 +40,7 @@ int hours = 0;
 int minutes = 0;
 int seconds = 0;
 
-int UTC_OFFSET = 19800; // Offset for Colombo: UTC+5:30 (5 * 3600 + 30 * 60 = 19800 seconds)
+int UTC_OFFSET = -19800; // Offset for Colombo: UTC+5:30 (5 * 3600 + 30 * 60 = 19800 seconds)
 int UTC_OFFSET_HOURS = 5;
 int UTC_OFFSET_MINUTES = 30;
 
@@ -152,11 +152,13 @@ void print_time_now() {
   print_line(format_with_zeros(days, 2), 52, 0, 1);
   
   // Format time with leading zeros (HH:MM:SS)
-  print_line(format_with_zeros(hours, 2), 25, 20, 2);
+  print_line(format_with_zeros(hours, 2), 25, 15, 2);
   print_line(":", 45, 20, 2);
-  print_line(format_with_zeros(minutes, 2), 55, 20, 2);
+  print_line(format_with_zeros(minutes, 2), 55, 15, 2);
   print_line(":", 75, 20, 2);
-  print_line(format_with_zeros(seconds, 2), 85, 20, 2);
+  print_line(format_with_zeros(seconds, 2), 85, 15, 2);
+
+  print_line("UTC OFFSET: " + format_with_zeros(UTC_OFFSET_HOURS, 2) + ":" + format_with_zeros(UTC_OFFSET_MINUTES, 2), 0, 35, 1);
 }
 
 void update_time() {
@@ -360,30 +362,30 @@ void set_time() {
 }
 
 void set_time_zone() {
-  int temp_hour = UTC_OFFSET_HOURS;
-  int temp_minute = UTC_OFFSET_MINUTES;
+  int utc_hour_offset = UTC_OFFSET_HOURS;
+  int utc_minute_offset = UTC_OFFSET_MINUTES;
   bool is_time_set = false;
 
   while (true) {
     display.clearDisplay();
-    print_line("Enter UTC offset hours: " + String(temp_hour), 0, 0, 2);
+    print_line("Enter UTC offset hours: " + String(utc_hour_offset), 0, 0, 2);
     int pressed = wait_for_button_press();
     if (pressed == PB_UP) {
       delay(100);
-      temp_hour = (temp_hour + 1) % 24;
+      utc_hour_offset = (utc_hour_offset + 1) % 24;
     }
 
     else if (pressed == PB_DOWN) {
       delay(100);
-      temp_hour -= 1;
-      if (temp_hour < 0) {
-        temp_hour = 23;
+      utc_hour_offset -= 1;
+      if (utc_hour_offset < 0) {
+        utc_hour_offset = 23;
       }
     }
 
     else if (pressed == PB_OK) {
       delay(100);
-      hours = temp_hour;
+      //hours = utc_hour_offset;
       is_time_set = true;
       break;
     }
@@ -396,24 +398,24 @@ void set_time_zone() {
 
   while (true) {
     display.clearDisplay();
-    print_line("Enter UTC offset minutes: " + String(temp_minute), 0, 0, 2);
+    print_line("Enter UTC offset minutes: " + String(utc_minute_offset), 0, 0, 2);
     int pressed = wait_for_button_press();
     if (pressed == PB_UP) {
       delay(100);
-      temp_minute = (temp_minute + 1) % 60;
+      utc_minute_offset = (utc_minute_offset + 1) % 60;
     }
 
     else if (pressed == PB_DOWN) {
       delay(100);
-      temp_minute -= 1;
-      if (temp_minute < 0) {
-        temp_minute = 59;
+      utc_minute_offset -= 1;
+      if (utc_minute_offset < 0) {
+        utc_minute_offset = 59;
       }
     }
 
     else if (pressed == PB_OK) {
       delay(100);
-      minutes = temp_minute;
+      //minutes = utc_minute_offset;
       is_time_set = true;
       break;
     }
@@ -423,6 +425,10 @@ void set_time_zone() {
       break;
     }
   }
+
+  // Update the global variables with the new values
+  UTC_OFFSET_HOURS = utc_hour_offset;
+  UTC_OFFSET_MINUTES = utc_minute_offset;
 
   UTC_OFFSET = UTC_OFFSET_HOURS * 3600 + UTC_OFFSET_MINUTES * 60;
   configTime(UTC_OFFSET, UTC_OFFSET_DST, NTP_SERVER);
@@ -533,22 +539,28 @@ void run_mode(int mode) {
 void check_temp(){
   TempAndHumidity data = dhtSensor.getTempAndHumidity();
   if (data.temperature > MAX_HEALTHY_TEMPERATURE){
-    print_line("TEMP HIGH", 0, 40, 1);
+    print_line("TEMP: HIGH", 0, 45, 1);
+    digitalWrite(LED_1, HIGH);
   }
   else if (data.temperature < MIN_HEALTHY_TEMPERATURE){
-    print_line("TEMP LOW", 0, 40, 1);
+    print_line("TEMP: LOW", 0, 45, 1);
+    digitalWrite(LED_1, HIGH);
   }
   else {
-    print_line("TEMP OK", 0, 40, 1);
+    print_line("TEMP: OK", 0, 45, 1);
+    digitalWrite(LED_1, LOW);
   }
   if (data.humidity > MAX_HEALTHY_HUMIDITY){
-    print_line("HUMIDITY HIGH", 0, 50, 1);
+    print_line("HUMIDITY: HIGH", 0, 55, 1);
+    digitalWrite(LED_1, HIGH);
   }
   else if (data.humidity < MIN_HEALTHY_HUMIDITY){
-    print_line("HUMIDITY LOW", 0, 50, 1);
+    print_line("HUMIDITY: LOW", 0, 55, 1);
+    digitalWrite(LED_1, HIGH);
   }
   else {
-    print_line("HUMIDITY OK", 0, 50, 1);
+    print_line("HUMIDITY: OK", 0, 55, 1);
+    digitalWrite(LED_1, LOW);
   }
 }
 
@@ -586,7 +598,7 @@ void view_active_alarms() {
         }
       }
     }
-    go_to_menu();
+    current_mode = 0; // Reset to the first mode
 }
 
 void delete_alarm(){
