@@ -40,7 +40,7 @@ int hours = 0;
 int minutes = 0;
 int seconds = 0;
 
-int UTC_OFFSET = -19800; // Offset for Colombo: UTC+5:30 (5 * 3600 + 30 * 60 = 19800 seconds)
+int UTC_OFFSET = 19800; // Offset for Colombo: UTC+5:30 (5 * 3600 + 30 * 60 = 19800 seconds)
 int UTC_OFFSET_HOURS = 5;
 int UTC_OFFSET_MINUTES = 30;
 
@@ -48,10 +48,11 @@ unsigned long timeNow = 0;
 unsigned long timeLast = 0;
 
 bool alarm_enabled = true;
-int n_alarms = 2;
-int alarm_hours[] = {0, 1};
-int alarm_minutes[] = {1, 10};
+#define n_alarms 2
+int alarm_hours[n_alarms];
+int alarm_minutes[n_alarms];
 bool alarm_triggered[] = {false, false};
+bool alarm_set[] = {false, false};
 
 int n_notes = 8;
 int C = 262;
@@ -231,7 +232,7 @@ void update_time_with_check_alarm() {
 
   if (alarm_enabled) {
     for (int i = 0; i < n_alarms; i++) {
-      if (!alarm_triggered[i] && hours == alarm_hours[i] && minutes == alarm_minutes[i]) {
+      if (alarm_set[i] && !alarm_triggered[i] && hours == alarm_hours[i] && minutes == alarm_minutes[i]) {
         ring_alarm(i);
       }
     }
@@ -471,6 +472,7 @@ void set_alarm(int alarm) {
     else if (pressed == PB_OK) {
       delay(100);
       alarm_hours[alarm] = temp_hour;
+      alarm_set[alarm] = true;
       break;
     }
 
@@ -500,6 +502,7 @@ void set_alarm(int alarm) {
     else if (pressed == PB_OK) {
       delay(100);
       alarm_minutes[alarm] = temp_minute;
+      alarm_set[alarm] = true;
       break;
     }
 
@@ -587,7 +590,10 @@ void view_active_alarms() {
 
     while (millis() - startTime < 10000 && digitalRead(PB_CANCEL) == HIGH) {
       for (int i = 0; i < n_alarms; i++) {
-        if (alarm_enabled && alarm_triggered[i] == false) {
+        if (!alarm_set[i]) {
+          print_line("Alarm " + String(i + 1) + ": Not set", 0, 20 + (i * 20), 1);; // Skip if the alarm is not set
+        }
+        else if (alarm_enabled && alarm_triggered[i] == false) {
           print_line("Alarm " + String(i + 1) + " at " + format_with_zeros(alarm_hours[i], 2) + ":" + format_with_zeros(alarm_minutes[i], 2), 0, 20 + (i * 20), 1);
         }
         else if (alarm_triggered[i] == true) {
@@ -602,10 +608,14 @@ void view_active_alarms() {
 }
 
 void delete_alarm(){
-    int alarm_to_delete = -1;
-    while (true) {
+    int alarm_to_delete = 0;
+    bool selectionMade = false;
+
+    while (!selectionMade) {
       display.clearDisplay();
       print_line("Enter Alarm to Delete: " + String(alarm_to_delete + 1), 0, 0, 2);
+      print_line("Press OK to delete", 0, 40, 1);
+      print_line("or CANCEL to exit", 0, 50, 1);
       int pressed = wait_for_button_press();
       if (pressed == PB_UP) {
         delay(100);
@@ -623,13 +633,15 @@ void delete_alarm(){
 
       else if (pressed == PB_OK) {
         delay(100);
-        alarm_triggered[alarm_to_delete] = true;
-        break;
+        // Mark the alarm as not set (deleted)
+        alarm_set[alarm_to_delete] = false;
+        alarm_triggered[alarm_to_delete] = false;
+        selectionMade = true;
       }
 
       else if (pressed == PB_CANCEL) {
         delay(100);
-        break;
+        return;
       }
     }
 
