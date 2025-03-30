@@ -92,6 +92,7 @@ void setup() {
   display.display();
   delay(2000);
 
+  // Connecting to the server
   WiFi.begin("Wokwi-GUEST", "", 6);
   while (WiFi.status() != WL_CONNECTED) {
     delay(250);
@@ -143,27 +144,8 @@ String format_with_zeros(int value, int digits) {
   return result;
 }
 
-void print_time_now() {
-  display.clearDisplay();
-  
-  // Format date with leading zeros (YYYY:MM:DD)
-  print_line(String(years), 0, 0, 1);
-  print_line(":", 25, 0, 1);
-  print_line(format_with_zeros(months, 2), 32, 0, 1);
-  print_line(":", 45, 0, 1);
-  print_line(format_with_zeros(days, 2), 52, 0, 1);
-  
-  // Format time with leading zeros (HH:MM:SS)
-  print_line(format_with_zeros(hours, 2), 25, 15, 2);
-  print_line(":", 45, 20, 2);
-  print_line(format_with_zeros(minutes, 2), 55, 15, 2);
-  print_line(":", 75, 20, 2);
-  print_line(format_with_zeros(seconds, 2), 85, 15, 2);
 
-  String signStr = OFFSET_NEGATIVE ? "-" : "+";
-  print_line("UTC OFFSET: " + signStr + format_with_zeros(UTC_OFFSET_HOURS, 2) + ":" + format_with_zeros(UTC_OFFSET_MINUTES, 2), 0, 35, 1);
-}
-
+// Fetching the current time from the NTP server and displaying on OLED
 void update_time() {
   struct tm timeinfo;
   getLocalTime(&timeinfo);
@@ -193,78 +175,29 @@ void update_time() {
   years = atoi(timeYear);
 }
 
-void ring_alarm(int alarm) {
+void print_time_now() {
   display.clearDisplay();
-  print_line("MEDICINE TIME!", 0, 20, 2);
-  digitalWrite(LED_1, HIGH);
+  
+  // Format date with leading zeros (YYYY:MM:DD)
+  print_line(String(years), 0, 0, 1);
+  print_line(":", 25, 0, 1);
+  print_line(format_with_zeros(months, 2), 32, 0, 1);
+  print_line(":", 45, 0, 1);
+  print_line(format_with_zeros(days, 2), 52, 0, 1);
+  
+  // Format time with leading zeros (HH:MM:SS)
+  print_line(format_with_zeros(hours, 2), 25, 15, 2);
+  print_line(":", 45, 20, 2);
+  print_line(format_with_zeros(minutes, 2), 55, 15, 2);
+  print_line(":", 75, 20, 2);
+  print_line(format_with_zeros(seconds, 2), 85, 15, 2);
 
-  bool break_happened = false;
-
-  // Ring the Buzzer
-  while (digitalRead(PB_CANCEL) == HIGH && !break_happened) {
-    for (int i = 0; i < n_notes; i++) {
-      if (digitalRead(PB_CANCEL) == LOW) {
-        delay(200);
-        break_happened = true;
-        alarm_triggered[alarm] = true;
-        break;
-      }
-      if (digitalRead(PB_SNOOZE) == LOW) {
-        delay(200);
-        snooze_alarm(alarm);
-        break_happened = true;
-        alarm_triggered[alarm] = false;
-        break;
-      }
-
-      tone(BUZZER, notes[i]);
-      delay(500);
-      noTone(BUZZER);
-      delay(2);
-    }
-  }
-
-  digitalWrite(LED_1, LOW);
-  display.clearDisplay();
+  String signStr = OFFSET_NEGATIVE ? "-" : "+";
+  print_line("UTC OFFSET: " + signStr + format_with_zeros(UTC_OFFSET_HOURS, 2) + ":" + format_with_zeros(UTC_OFFSET_MINUTES, 2), 0, 35, 1);
 }
 
-void update_time_with_check_alarm() {
-  update_time();
-  print_time_now();
 
-  if (alarm_enabled) {
-    for (int i = 0; i < n_alarms; i++) {
-      if (alarm_set[i] && !alarm_triggered[i] && hours == alarm_hours[i] && minutes == alarm_minutes[i]) {
-        ring_alarm(i);
-      }
-    }
-  }
-}
-
-int wait_for_button_press() {
-  while (true) {
-    if (digitalRead(PB_UP) == LOW) {
-      delay(100);
-      return PB_UP;
-    }
-
-    else if (digitalRead(PB_DOWN) == LOW) {
-      delay(100);
-      return PB_DOWN;
-    }
-
-    else if (digitalRead(PB_OK) == LOW) {
-      delay(100);
-      return PB_OK;
-    }
-
-    else if (digitalRead(PB_CANCEL) == LOW) {
-      delay(100);
-      return PB_CANCEL;
-    }
-  }
-}
-
+// Entering and navigating the menu
 void go_to_menu() {
   while (digitalRead(PB_CANCEL) == HIGH) {
     display.clearDisplay();
@@ -297,73 +230,54 @@ void go_to_menu() {
   }
 }
 
-void set_time() {
-  int temp_hour = hours;
-  int temp_minute = minutes;
-
+int wait_for_button_press() {
   while (true) {
-    display.clearDisplay();
-    print_line("Enter hour: " + String(temp_hour), 0, 0, 2);
-    int pressed = wait_for_button_press();
-    if (pressed == PB_UP) {
+    if (digitalRead(PB_UP) == LOW) {
       delay(100);
-      temp_hour = (temp_hour + 1) % 24;
+      return PB_UP;
     }
 
-    else if (pressed == PB_DOWN) {
+    else if (digitalRead(PB_DOWN) == LOW) {
       delay(100);
-      temp_hour -= 1;
-      if (temp_hour < 0) {
-        temp_hour = 23;
-      }
+      return PB_DOWN;
     }
 
-    else if (pressed == PB_OK) {
+    else if (digitalRead(PB_OK) == LOW) {
       delay(100);
-      hours = temp_hour;
-      break;
+      return PB_OK;
     }
 
-    else if (pressed == PB_CANCEL) {
+    else if (digitalRead(PB_CANCEL) == LOW) {
       delay(100);
-      break;
+      return PB_CANCEL;
     }
   }
-
-  while (true) {
-    display.clearDisplay();
-    print_line("Enter minute: " + String(temp_minute), 0, 0, 2);
-    int pressed = wait_for_button_press();
-    if (pressed == PB_UP) {
-      delay(100);
-      temp_minute = (temp_minute + 1) % 60;
-    }
-
-    else if (pressed == PB_DOWN) {
-      delay(100);
-      temp_minute -= 1;
-      if (temp_minute < 0) {
-        temp_minute = 59;
-      }
-    }
-
-    else if (pressed == PB_OK) {
-      delay(100);
-      minutes = temp_minute;
-      break;
-    }
-
-    else if (pressed == PB_CANCEL) {
-      delay(100);
-      break;
-    }
-  }
-  
-  display.clearDisplay();
-  print_line("Time set!", 0, 0, 2);
-  delay(1000);
 }
 
+void run_mode(int mode) {
+  if (mode == 0) {
+    set_time_zone();
+  }
+
+  else if (mode == 1 || mode ==2) {
+    set_alarm(mode - 1);
+  }
+
+  else if (mode == 3) {
+    alarm_enabled = !alarm_enabled;
+  }
+
+  else if (mode == 4) {
+    view_active_alarms();
+  }
+
+  else if (mode == 5) {
+    delete_alarm();
+  }
+}
+
+
+// Setting time zone
 void set_time_zone() {
   int utc_hour_offset = UTC_OFFSET_HOURS;
   int utc_minute_offset = UTC_OFFSET_MINUTES;
@@ -477,6 +391,8 @@ void set_time_zone() {
   
 }
 
+
+// Setting and viewing alarms
 void set_alarm(int alarm) {
   int temp_hour = alarm_hours[alarm];
   int temp_minute = alarm_minutes[alarm];
@@ -547,71 +463,6 @@ void set_alarm(int alarm) {
   delay(1000);
 }
 
-void run_mode(int mode) {
-  if (mode == 0) {
-    set_time_zone();
-  }
-
-  else if (mode == 1 || mode ==2) {
-    set_alarm(mode - 1);
-  }
-
-  else if (mode == 3) {
-    alarm_enabled = !alarm_enabled;
-  }
-
-  else if (mode == 4) {
-    view_active_alarms();
-  }
-
-  else if (mode == 5) {
-    delete_alarm();
-  }
-}
-
-void check_temp(){
-  TempAndHumidity data = dhtSensor.getTempAndHumidity();
-  if (data.temperature > MAX_HEALTHY_TEMPERATURE){
-    print_line("TEMP: HIGH", 0, 45, 1);
-    digitalWrite(LED_1, HIGH);
-  }
-  else if (data.temperature < MIN_HEALTHY_TEMPERATURE){
-    print_line("TEMP: LOW", 0, 45, 1);
-    digitalWrite(LED_1, HIGH);
-  }
-  else {
-    print_line("TEMP: OK", 0, 45, 1);
-    digitalWrite(LED_1, LOW);
-  }
-  if (data.humidity > MAX_HEALTHY_HUMIDITY){
-    print_line("HUMIDITY: HIGH", 0, 55, 1);
-    digitalWrite(LED_1, HIGH);
-  }
-  else if (data.humidity < MIN_HEALTHY_HUMIDITY){
-    print_line("HUMIDITY: LOW", 0, 55, 1);
-    digitalWrite(LED_1, HIGH);
-  }
-  else {
-    print_line("HUMIDITY: OK", 0, 55, 1);
-    digitalWrite(LED_1, LOW);
-  }
-}
-
-void snooze_alarm(int alarm) {
-    update_time();
-
-    alarm_minutes[alarm] += 5;
-    if (alarm_minutes[alarm] >= 60) {
-      alarm_hours[alarm] += 1;
-      alarm_minutes[alarm] = alarm_minutes[alarm] % 60;
-      alarm_hours[alarm] = alarm_hours[alarm] % 24;
-    }
-
-    display.clearDisplay();
-    print_line("Alarm snoozed for 5 minutes!", 0, 0, 2);
-    delay(2000);
-}
-
 void view_active_alarms() {
     display.clearDisplay();
     print_line("Viewing Alarms", 0, 0, 1);
@@ -637,6 +488,73 @@ void view_active_alarms() {
     current_mode = 0; // Reset to the first mode
 }
 
+
+// Ring an alarm, stopping and snoozing it
+void update_time_with_check_alarm() {
+  update_time();
+  print_time_now();
+
+  if (alarm_enabled) {
+    for (int i = 0; i < n_alarms; i++) {
+      if (alarm_set[i] && !alarm_triggered[i] && hours == alarm_hours[i] && minutes == alarm_minutes[i]) {
+        ring_alarm(i);
+      }
+    }
+  }
+}
+
+void ring_alarm(int alarm) {
+  display.clearDisplay();
+  print_line("MEDICINE TIME!", 0, 20, 2);
+  digitalWrite(LED_1, HIGH);
+
+  bool break_happened = false;
+
+  // Ring the Buzzer
+  while (digitalRead(PB_CANCEL) == HIGH && !break_happened) {
+    for (int i = 0; i < n_notes; i++) {
+      if (digitalRead(PB_CANCEL) == LOW) {
+        delay(200);
+        break_happened = true;
+        alarm_triggered[alarm] = true;
+        break;
+      }
+      if (digitalRead(PB_SNOOZE) == LOW) {
+        delay(200);
+        snooze_alarm(alarm);
+        break_happened = true;
+        alarm_triggered[alarm] = false;
+        break;
+      }
+
+      tone(BUZZER, notes[i]);
+      delay(500);
+      noTone(BUZZER);
+      delay(2);
+    }
+  }
+
+  digitalWrite(LED_1, LOW);
+  display.clearDisplay();
+}
+
+void snooze_alarm(int alarm) {
+    update_time();
+
+    alarm_minutes[alarm] += 5;
+    if (alarm_minutes[alarm] >= 60) {
+      alarm_hours[alarm] += 1;
+      alarm_minutes[alarm] = alarm_minutes[alarm] % 60;
+      alarm_hours[alarm] = alarm_hours[alarm] % 24;
+    }
+
+    display.clearDisplay();
+    print_line("Alarm snoozed for 5 minutes!", 0, 0, 2);
+    delay(2000);
+}
+
+
+// Deleting a specific alarm
 void delete_alarm(){
     int alarm_to_delete = 0;
     bool selectionMade = false;
@@ -678,4 +596,34 @@ void delete_alarm(){
     display.clearDisplay();
     print_line("Alarm " + String(alarm_to_delete + 1) + " deleted!", 0, 0, 2);
     delay(2000);
+}
+
+
+// Temp and humidity warnings
+void check_temp(){
+  TempAndHumidity data = dhtSensor.getTempAndHumidity();
+  if (data.temperature > MAX_HEALTHY_TEMPERATURE){
+    print_line("TEMP: HIGH", 0, 45, 1);
+    digitalWrite(LED_1, HIGH);
+  }
+  else if (data.temperature < MIN_HEALTHY_TEMPERATURE){
+    print_line("TEMP: LOW", 0, 45, 1);
+    digitalWrite(LED_1, HIGH);
+  }
+  else {
+    print_line("TEMP: OK", 0, 45, 1);
+    digitalWrite(LED_1, LOW);
+  }
+  if (data.humidity > MAX_HEALTHY_HUMIDITY){
+    print_line("HUMIDITY: HIGH", 0, 55, 1);
+    digitalWrite(LED_1, HIGH);
+  }
+  else if (data.humidity < MIN_HEALTHY_HUMIDITY){
+    print_line("HUMIDITY: LOW", 0, 55, 1);
+    digitalWrite(LED_1, HIGH);
+  }
+  else {
+    print_line("HUMIDITY: OK", 0, 55, 1);
+    digitalWrite(LED_1, LOW);
+  }
 }
