@@ -53,7 +53,7 @@ bool alarm_enabled = true;
 int alarm_hours[n_alarms];
 int alarm_minutes[n_alarms];
 bool alarm_triggered[] = {false, false};
-bool alarm_set[] = {false, false};
+bool alarm_set[] = {false, false}; // start with no alarms set
 
 int n_notes = 8;
 int C = 262;
@@ -146,6 +146,119 @@ String format_with_zeros(int value, int digits) {
 
 
 // Fetching the current time from the NTP server and displaying on OLED
+void set_time_zone() {
+  int utc_hour_offset = UTC_OFFSET_HOURS;
+  int utc_minute_offset = UTC_OFFSET_MINUTES;
+  bool is_time_set = false;
+  bool offset_negative = OFFSET_NEGATIVE;      
+
+  // Select offset sign
+  while (true) {
+    display.clearDisplay();
+    String signStr = offset_negative ? "-" : "+";
+    print_line("UTC offset sign: " + signStr, 0, 0, 2);
+    print_line("UP/DOWN to toggle", 0, 40, 1);
+    print_line("OK to confirm", 0, 50, 1);
+    int pressed = wait_for_button_press();
+    if (pressed == PB_UP || pressed == PB_DOWN) {
+      offset_negative = !offset_negative;
+      delay(100);
+    }
+    else if (pressed == PB_OK) {
+      delay(100);
+      break;
+    }
+    else if (pressed == PB_CANCEL) {
+      delay(100);
+      break;
+    }
+  }
+
+  while (true) {
+    display.clearDisplay();
+    print_line("Enter UTC offset hours: " + String(utc_hour_offset), 0, 0, 2);
+    int pressed = wait_for_button_press();
+    if (pressed == PB_UP) {
+      delay(100);
+      utc_hour_offset = (utc_hour_offset + 1) % 24;
+    }
+
+    else if (pressed == PB_DOWN) {
+      delay(100);
+      utc_hour_offset -= 1;
+      if (utc_hour_offset < 0) {
+        utc_hour_offset = 23;
+      }
+    }
+
+    else if (pressed == PB_OK) {
+      delay(100);
+      //hours = utc_hour_offset;
+      is_time_set = true;
+      break;
+    }
+
+    else if (pressed == PB_CANCEL) {
+      delay(100);
+      break;
+    }
+  }
+
+  while (true) {
+    display.clearDisplay();
+    print_line("Enter UTC offset minutes: " + String(utc_minute_offset), 0, 0, 2);
+    int pressed = wait_for_button_press();
+    if (pressed == PB_UP) {
+      delay(100);
+      utc_minute_offset = (utc_minute_offset + 1) % 60;
+    }
+
+    else if (pressed == PB_DOWN) {
+      delay(100);
+      utc_minute_offset -= 1;
+      if (utc_minute_offset < 0) {
+        utc_minute_offset = 59;
+      }
+    }
+
+    else if (pressed == PB_OK) {
+      delay(100);
+      //minutes = utc_minute_offset;
+      is_time_set = true;
+      break;
+    }
+
+    else if (pressed == PB_CANCEL) {
+      delay(100);
+      break;
+    }
+  }
+
+  // Update the global variables with the new values
+  UTC_OFFSET_HOURS = utc_hour_offset;
+  UTC_OFFSET_MINUTES = utc_minute_offset;
+  OFFSET_NEGATIVE = offset_negative;
+
+  UTC_OFFSET = UTC_OFFSET_HOURS * 3600 + UTC_OFFSET_MINUTES * 60;
+  if (OFFSET_NEGATIVE) {
+    UTC_OFFSET = -UTC_OFFSET;
+  }
+
+  configTime(UTC_OFFSET, UTC_OFFSET_DST, NTP_SERVER);
+
+  display.clearDisplay();
+  if (is_time_set) {
+    print_line("Time zone set!", 0, 0, 2);
+    delay(1000);
+  }
+
+  else {
+    print_line("Time zone not set!", 0, 0, 2);
+    delay(1000);
+  }
+  
+}
+
 void update_time() {
   struct tm timeinfo;
   getLocalTime(&timeinfo);
@@ -265,6 +378,19 @@ void run_mode(int mode) {
 
   else if (mode == 3) {
     alarm_enabled = !alarm_enabled;
+    if (alarm_enabled) {
+      display.clearDisplay();
+      print_line("Alarms Enabled", 0, 0, 2);
+      delay(1000);
+      display.clearDisplay();
+    }
+    else {
+      display.clearDisplay();
+      print_line("Alarms Disabled", 0, 0, 2);
+      delay(1000);
+      display.clearDisplay();
+    }
+
   }
 
   else if (mode == 4) {
@@ -274,121 +400,6 @@ void run_mode(int mode) {
   else if (mode == 5) {
     delete_alarm();
   }
-}
-
-
-// Setting time zone
-void set_time_zone() {
-  int utc_hour_offset = UTC_OFFSET_HOURS;
-  int utc_minute_offset = UTC_OFFSET_MINUTES;
-  bool is_time_set = false;
-  bool offset_negative = OFFSET_NEGATIVE;      
-
-  // Select offset sign
-  while (true) {
-    display.clearDisplay();
-    String signStr = offset_negative ? "-" : "+";
-    print_line("UTC offset sign: " + signStr, 0, 0, 2);
-    print_line("UP/DOWN to toggle", 0, 40, 1);
-    print_line("OK to confirm", 0, 50, 1);
-    int pressed = wait_for_button_press();
-    if (pressed == PB_UP || pressed == PB_DOWN) {
-      offset_negative = !offset_negative;
-      delay(100);
-    }
-    else if (pressed == PB_OK) {
-      delay(100);
-      break;
-    }
-    else if (pressed == PB_CANCEL) {
-      delay(100);
-      break;
-    }
-  }
-
-  while (true) {
-    display.clearDisplay();
-    print_line("Enter UTC offset hours: " + String(utc_hour_offset), 0, 0, 2);
-    int pressed = wait_for_button_press();
-    if (pressed == PB_UP) {
-      delay(100);
-      utc_hour_offset = (utc_hour_offset + 1) % 24;
-    }
-
-    else if (pressed == PB_DOWN) {
-      delay(100);
-      utc_hour_offset -= 1;
-      if (utc_hour_offset < 0) {
-        utc_hour_offset = 23;
-      }
-    }
-
-    else if (pressed == PB_OK) {
-      delay(100);
-      //hours = utc_hour_offset;
-      is_time_set = true;
-      break;
-    }
-
-    else if (pressed == PB_CANCEL) {
-      delay(100);
-      break;
-    }
-  }
-
-  while (true) {
-    display.clearDisplay();
-    print_line("Enter UTC offset minutes: " + String(utc_minute_offset), 0, 0, 2);
-    int pressed = wait_for_button_press();
-    if (pressed == PB_UP) {
-      delay(100);
-      utc_minute_offset = (utc_minute_offset + 1) % 60;
-    }
-
-    else if (pressed == PB_DOWN) {
-      delay(100);
-      utc_minute_offset -= 1;
-      if (utc_minute_offset < 0) {
-        utc_minute_offset = 59;
-      }
-    }
-
-    else if (pressed == PB_OK) {
-      delay(100);
-      //minutes = utc_minute_offset;
-      is_time_set = true;
-      break;
-    }
-
-    else if (pressed == PB_CANCEL) {
-      delay(100);
-      break;
-    }
-  }
-
-  // Update the global variables with the new values
-  UTC_OFFSET_HOURS = utc_hour_offset;
-  UTC_OFFSET_MINUTES = utc_minute_offset;
-  OFFSET_NEGATIVE = offset_negative;
-
-  UTC_OFFSET = UTC_OFFSET_HOURS * 3600 + UTC_OFFSET_MINUTES * 60;
-  if (OFFSET_NEGATIVE) {
-    UTC_OFFSET = -UTC_OFFSET;
-  }
-
-  configTime(UTC_OFFSET, UTC_OFFSET_DST, NTP_SERVER);
-
-  display.clearDisplay();
-  if (is_time_set) {
-    print_line("Time zone set!", 0, 0, 2);
-    delay(1000);
-  }
-
-  else {
-    print_line("Time zone not set!", 0, 0, 2);
-    delay(1000);
-  }
-  
 }
 
 
@@ -511,7 +522,7 @@ void ring_alarm(int alarm) {
   bool break_happened = false;
 
   // Ring the Buzzer
-  while (digitalRead(PB_CANCEL) == HIGH && !break_happened) {
+  while (!break_happened) {
     for (int i = 0; i < n_notes; i++) {
       if (digitalRead(PB_CANCEL) == LOW) {
         delay(200);
@@ -604,26 +615,26 @@ void check_temp(){
   TempAndHumidity data = dhtSensor.getTempAndHumidity();
   if (data.temperature > MAX_HEALTHY_TEMPERATURE){
     print_line("TEMP: HIGH", 0, 45, 1);
-    digitalWrite(LED_1, HIGH);
   }
   else if (data.temperature < MIN_HEALTHY_TEMPERATURE){
     print_line("TEMP: LOW", 0, 45, 1);
-    digitalWrite(LED_1, HIGH);
   }
   else {
     print_line("TEMP: OK", 0, 45, 1);
-    digitalWrite(LED_1, LOW);
   }
   if (data.humidity > MAX_HEALTHY_HUMIDITY){
     print_line("HUMIDITY: HIGH", 0, 55, 1);
-    digitalWrite(LED_1, HIGH);
   }
   else if (data.humidity < MIN_HEALTHY_HUMIDITY){
     print_line("HUMIDITY: LOW", 0, 55, 1);
-    digitalWrite(LED_1, HIGH);
   }
   else {
     print_line("HUMIDITY: OK", 0, 55, 1);
+  }
+
+  if (data.temperature > MAX_HEALTHY_TEMPERATURE || data.temperature < MIN_HEALTHY_TEMPERATURE || data.humidity > MAX_HEALTHY_HUMIDITY || data.humidity < MIN_HEALTHY_HUMIDITY) {
+    digitalWrite(LED_1, HIGH);
+  } else {
     digitalWrite(LED_1, LOW);
   }
 }
