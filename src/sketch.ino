@@ -43,6 +43,7 @@ Servo windowServo;
 
 //MQTT broker and topic
 const char* MQTT_BROKER = "test.mosquitto.org";
+//const char* MQTT_BROKER = "broker.hivemq.com";
 const char* MQTT_TEMP = "medibox/temperature";
 const char* MQTT_HUM = "medibox/humidity";
 
@@ -106,9 +107,6 @@ int notes[] = {C, D, E, F, G, A, B, C_H};
 int current_mode = 0;
 int max_modes = 6;
 String modes[] = {"1 - Set Time Zone", "2 - Set Alarm 1", "3 - Set Alarm 2", "4 - Enable/Disable Alarms", "5 - View Active Alarms", "6 - Delete Alarm"};
-
-//char tempAr[6]; // Array to hold temperature data
-//char humAr[6]; // Array to hold humidity data
 
 
 void setup() {
@@ -190,7 +188,6 @@ void loop() {
 
 }
 
-
 void sampleLightIntensity() {
   // Read LDR and accumulate values at ts interval
   //static unsigned long lastSampleTime = 0;
@@ -222,8 +219,10 @@ void adjustWindowServo(float intensity) {
   float T = isnan(data.temperature) ? Tmed : data.temperature;
 
   // Use the latest parameters from sliders
-  float lnFactor = log((float)ts / tu);
+  float lnFactor = tu > 0 ? log((float)ts / tu) : 0;
+
   float factor = intensity * gammaFactor * lnFactor * (T / Tmed);
+  factor = constrain(factor, 0.0f, 1.0f);
   float theta = thetaOffset + (180.0f - thetaOffset) * factor;
   
   theta = constrain(theta, thetaOffset, 180.0f);
@@ -239,27 +238,40 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
   Serial.println(String("Received [") + topic + "] -> " + msg);
   
+  bool shouldUpdateServo = false;
+
   if (strcmp(topic, TOPIC_TS) == 0) {
     ts = msg.toInt();
     Serial.println("Sampling interval: " + String(ts) + "s");
+    shouldUpdateServo = true;
     
   } else if (strcmp(topic, TOPIC_TU) == 0) {
     // Convert minutes to seconds (if your slider sends minutes)
     tu = msg.toInt() * 60; 
     Serial.println("Update interval: " + String(tu/60) + "mins");
+    shouldUpdateServo = true;
     
   } else if (strcmp(topic, TOPIC_OFFSET) == 0) {
     thetaOffset = msg.toFloat();
     windowServo.write((int)thetaOffset);
     Serial.println("Min angle: " + String(thetaOffset));
+    shouldUpdateServo = true;
     
   } else if (strcmp(topic, TOPIC_GAMMA) == 0) {
     gammaFactor = msg.toFloat();
     Serial.println("Gamma: " + String(gammaFactor));
+    shouldUpdateServo = true;
     
   } else if (strcmp(topic, TOPIC_TMED) == 0) {
     Tmed = msg.toFloat();
     Serial.println("Tmed: " + String(Tmed));
+    shouldUpdateServo = true;
+  }
+
+  // Update servo immediately if any parameter changed
+  if (shouldUpdateServo && ldrCount > 0) {
+    float intensity = avgLightIntensity();  // reuse the sampled light value
+    adjustWindowServo(intensity);
   }
 }
 
@@ -805,7 +817,6 @@ void delete_alarm(){
     print_line("Alarm " + String(alarm_to_delete + 1) + " deleted!", 0, 0, 2);
     delay(2000);
 }
-
 
 
 // Temp and humidity warnings
