@@ -3,6 +3,9 @@
 #include <Adafruit_SSD1306.h>
 #include <DHTesp.h>
 #include <WiFi.h>
+#include <PubSubClient.h>
+#include <ESP32Servo.h>
+#include <ArduinoJson.h>
 
 // OLED display width, height, and reset pin
 #define SCREEN_WIDTH 128
@@ -22,6 +25,8 @@
 #define PB_DOWN 35
 #define PB_SNOOZE 25
 #define DHTPIN 12
+#define LDRPIN 36
+#define SERVO_PIN 13
 
 #define MIN_HEALTHY_TEMPERATURE 24 // Minimum temperature for healthy range
 #define MAX_HEALTHY_TEMPERATURE 32 // Maximum temperature for healthy range
@@ -31,6 +36,38 @@
 // Declare objects
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 DHTesp dhtSensor;
+
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
+Servo windowServo;
+
+//MQTT broker and topic
+const char* MQTT_BROKER = "test.mosquitto.org";
+const char* MQTT_TEMP = "medibox/temperature";
+const char* MQTT_HUM = "medibox/humidity";
+
+const char* TOPIC_LIGHT = "medibox/lightIntensity";
+const char* TOPIC_TS = "medibox/ts";
+const char* TOPIC_TU = "medibox/tu";
+const char* TOPIC_OFFSET= "medibox/offsetAngle";
+const char* TOPIC_GAMMA = "medibox/gamma";
+const char* TOPIC_TMED = "medibox/Tmed";
+
+StaticJsonDocument<200> doc;
+char buffer[256];
+
+// Parameters (configurable via Node-RED)
+int ts = 5; // sampling interval (seconds), default 5
+int tu = 10; // update (sending) interval (seconds), default 120 (2 min)
+float thetaOffset = 30.0; // minimum servo angle in degrees, default 30°
+float gammaFactor = 0.75; // controlling factor γ, default 0.75
+float Tmed = 30.0; // ideal storage temperature, default 30°C
+
+// Variables for tracking time and readings
+unsigned long lastSampleTime = 0;
+unsigned long lastSendTime = 0;
+long ldrSum = 0;
+int ldrCount = 0;
 
 // Declare global variables
 int years = 0;
@@ -70,6 +107,10 @@ int current_mode = 0;
 int max_modes = 6;
 String modes[] = {"1 - Set Time Zone", "2 - Set Alarm 1", "3 - Set Alarm 2", "4 - Enable/Disable Alarms", "5 - View Active Alarms", "6 - Delete Alarm"};
 
+//char tempAr[6]; // Array to hold temperature data
+//char humAr[6]; // Array to hold humidity data
+
+
 void setup() {
   // put your setup code here, to run once:
   pinMode(BUZZER, OUTPUT);
@@ -81,6 +122,8 @@ void setup() {
   pinMode(PB_SNOOZE, INPUT);
 
   dhtSensor.setup(DHTPIN, DHTesp::DHT22);
+  windowServo.attach(SERVO_PIN);
+  windowServo.write((int)thetaOffset); // move servo to initial position
 
   Serial.begin(9600);
 
@@ -93,16 +136,9 @@ void setup() {
   delay(2000);
 
   // Connecting to the server
-  WiFi.begin("Wokwi-GUEST", "", 6);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(250);
-    display.clearDisplay();
-    print_line("Connecting to WiFi", 0, 10, 2);
-  }
+  setupWiFi();
 
-  display.clearDisplay();
-  print_line("Connected to WiFi", 0, 0, 2);
-  delay(1000);
+  setupMqtt();
 
   configTime(UTC_OFFSET, UTC_OFFSET_DST, NTP_SERVER);
 
@@ -114,14 +150,175 @@ void setup() {
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  
+  if (!mqttClient.connected()) {
+    connectToBroker();
+  }
+
+  mqttClient.loop();   // Handle the mqtt client properly
+
+  sampleLightIntensity(); // Sample light intensity
+
+  unsigned long now = millis();
+
+  if (now - lastSendTime >= (unsigned long)tu * 1000) {
+    lastSendTime = now;
+
+    if (ldrCount > 0) {
+      // Calculate average light intensity and adjust servo
+      float intensity = avgLightIntensity();
+      adjustWindowServo(intensity); // Adjust servo based on light intensity
+      doc["lightIntensity"] = String(intensity, 3);
+      Serial.println("Light Intensity: " + String(intensity));
+
+      ldrSum = 0;
+      ldrCount = 0;
+    }
+  }
+
+  check_temp();
+
+  serializeJson(doc, buffer);
+  mqttClient.publish("medibox/status", buffer);
+  delay(1000);
+
   update_time_with_check_alarm();
   if (digitalRead(PB_OK) == LOW) {
     delay(100);
     go_to_menu();
   }
 
-  check_temp();
+}
+
+
+void sampleLightIntensity() {
+  // Read LDR and accumulate values at ts interval
+  //static unsigned long lastSampleTime = 0;
+  unsigned long now = millis();
+  
+  if (now - lastSampleTime >= (unsigned long)ts * 1000) {
+    lastSampleTime = now;
+    int ldrVal = analogRead(LDRPIN);
+    ldrSum += ldrVal;
+    ldrCount++;
+    Serial.println("Sampled LDR: " + String(ldrVal));
+  }
+}
+
+float avgLightIntensity() {
+  // Calculate and format intensity with 3 decimal places
+  if (ldrCount == 0) return 0.0;
+  
+  float avgLdr = static_cast<float>(ldrSum) / ldrCount;
+  float intensity = avgLdr / 4095.0f;
+  intensity = round(intensity * 1000) / 1000.0f; // Force 3 decimals
+  
+  return intensity;
+}
+
+void adjustWindowServo(float intensity) {
+  // Calculate servo angle based on latest readings
+  TempAndHumidity data = dhtSensor.getTempAndHumidity();
+  float T = isnan(data.temperature) ? Tmed : data.temperature;
+
+  // Use the latest parameters from sliders
+  float lnFactor = log((float)ts / tu);
+  float factor = intensity * gammaFactor * lnFactor * (T / Tmed);
+  float theta = thetaOffset + (180.0f - thetaOffset) * factor;
+  
+  theta = constrain(theta, thetaOffset, 180.0f);
+  windowServo.write((int)theta);
+  
+  Serial.println("Servo θ: " + String(theta, 1) + "° | T: " + String(T, 1) + "°C");
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  // Convert payload to a null-terminated string
+  String msg;
+  for (unsigned int i = 0; i < length; i++) msg += (char)payload[i];
+
+  Serial.println(String("Received [") + topic + "] -> " + msg);
+  
+  if (strcmp(topic, TOPIC_TS) == 0) {
+    ts = msg.toInt();
+    Serial.println("Sampling interval: " + String(ts) + "s");
+    
+  } else if (strcmp(topic, TOPIC_TU) == 0) {
+    // Convert minutes to seconds (if your slider sends minutes)
+    tu = msg.toInt() * 60; 
+    Serial.println("Update interval: " + String(tu/60) + "mins");
+    
+  } else if (strcmp(topic, TOPIC_OFFSET) == 0) {
+    thetaOffset = msg.toFloat();
+    windowServo.write((int)thetaOffset);
+    Serial.println("Min angle: " + String(thetaOffset));
+    
+  } else if (strcmp(topic, TOPIC_GAMMA) == 0) {
+    gammaFactor = msg.toFloat();
+    Serial.println("Gamma: " + String(gammaFactor));
+    
+  } else if (strcmp(topic, TOPIC_TMED) == 0) {
+    Tmed = msg.toFloat();
+    Serial.println("Tmed: " + String(Tmed));
+  }
+}
+
+void setupWiFi() {
+  WiFi.begin("Wokwi-GUEST", "", 6);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(250);
+    display.clearDisplay();
+    print_line("Connecting to WiFi", 0, 10, 2);
+  }
+  display.clearDisplay();
+  print_line("Connected to WiFi", 0, 0, 2);
+  delay(1000);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void setupMqtt() {
+  // Setup MQTT client
+  mqttClient.setServer(MQTT_BROKER, 1883);
+  mqttClient.setCallback(mqttCallback);
+}
+
+void connectToBroker() {
+  // Connect to MQTT broker with retries
+  while (!mqttClient.connected()) {
+    display.clearDisplay();
+    print_line("Connecting to MQTT", 0, 10, 2);
+    delay(1000);
+    if (mqttClient.connect("Medibox")) {
+      // Subscribe to Node-RED topics
+      mqttClient.subscribe(TOPIC_TS);
+      mqttClient.subscribe(TOPIC_TU);
+      mqttClient.subscribe(TOPIC_OFFSET);
+      mqttClient.subscribe(TOPIC_GAMMA);
+      mqttClient.subscribe(TOPIC_TMED);
+
+      display.clearDisplay();
+      print_line("Connected to MQTT", 0, 0, 2);
+      delay(1000);
+      display.clearDisplay();
+    }
+    else {
+      display.clearDisplay();
+      print_line("MQTT connection failed", 0, 0, 2);
+      //print_line("State: " + (String)mqttClient.state(), 0, 20, 1);
+      print_line("Retrying...", 0, 40, 1);
+      delay(5000);
+    }
+  }
+}
+
+void buzzerOn(bool on) {
+  if (on) {
+    tone(BUZZER, notes[0], 1000); // Play a note for 1 second
+  }
+  else {
+    noTone(BUZZER); // Stop the buzzer
+  }
 }
 
 void print_line(String text, int column, int row, int textSize) {
@@ -610,9 +807,16 @@ void delete_alarm(){
 }
 
 
+
 // Temp and humidity warnings
 void check_temp(){
   TempAndHumidity data = dhtSensor.getTempAndHumidity();
+  // String(data.temperature, 2).toCharArray(tempAr, 6);
+  // String(data.humidity, 2).toCharArray(humAr, 6);
+
+  doc["temperature"] = data.temperature;
+  doc["humidity"] = data.humidity;
+
   if (data.temperature > MAX_HEALTHY_TEMPERATURE){
     print_line("TEMP: HIGH", 0, 45, 1);
   }
@@ -622,6 +826,7 @@ void check_temp(){
   else {
     print_line("TEMP: OK", 0, 45, 1);
   }
+
   if (data.humidity > MAX_HEALTHY_HUMIDITY){
     print_line("HUMIDITY: HIGH", 0, 55, 1);
   }
@@ -638,3 +843,4 @@ void check_temp(){
     digitalWrite(LED_1, LOW);
   }
 }
+
