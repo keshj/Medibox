@@ -342,6 +342,43 @@ void adjustWindowServo(float intensity) {
 }
 
 
+// Temp and humidity warnings
+void check_temp(){
+  TempAndHumidity data = dhtSensor.getTempAndHumidity();
+  // String(data.temperature, 2).toCharArray(tempAr, 6);
+  // String(data.humidity, 2).toCharArray(humAr, 6);
+
+  doc["temperature"] = data.temperature;
+  doc["humidity"] = data.humidity;
+
+  if (data.temperature > MAX_HEALTHY_TEMPERATURE){
+    print_line("TEMP: HIGH", 0, 45, 1);
+  }
+  else if (data.temperature < MIN_HEALTHY_TEMPERATURE){
+    print_line("TEMP: LOW", 0, 45, 1);
+  }
+  else {
+    print_line("TEMP: OK", 0, 45, 1);
+  }
+
+  if (data.humidity > MAX_HEALTHY_HUMIDITY){
+    print_line("HUMIDITY: HIGH", 0, 55, 1);
+  }
+  else if (data.humidity < MIN_HEALTHY_HUMIDITY){
+    print_line("HUMIDITY: LOW", 0, 55, 1);
+  }
+  else {
+    print_line("HUMIDITY: OK", 0, 55, 1);
+  }
+
+  if (data.temperature > MAX_HEALTHY_TEMPERATURE || data.temperature < MIN_HEALTHY_TEMPERATURE || data.humidity > MAX_HEALTHY_HUMIDITY || data.humidity < MIN_HEALTHY_HUMIDITY) {
+    digitalWrite(LED_1, HIGH);
+  } else {
+    digitalWrite(LED_1, LOW);
+  }
+}
+
+
 void print_line(String text, int column, int row, int textSize) {
   display.setTextSize(textSize);
   display.setTextColor(SSD1306_WHITE);
@@ -828,39 +865,4 @@ void delete_alarm(){
 }
 
 
-// Temp and humidity warnings
-void check_temp(){
-  TempAndHumidity data = dhtSensor.getTempAndHumidity();
-  // String(data.temperature, 2).toCharArray(tempAr, 6);
-  // String(data.humidity, 2).toCharArray(humAr, 6);
-
-  doc["temperature"] = data.temperature;
-  doc["humidity"] = data.humidity;
-
-  if (data.temperature > MAX_HEALTHY_TEMPERATURE){
-    print_line("TEMP: HIGH", 0, 45, 1);
-  }
-  else if (data.temperature < MIN_HEALTHY_TEMPERATURE){
-    print_line("TEMP: LOW", 0, 45, 1);
-  }
-  else {
-    print_line("TEMP: OK", 0, 45, 1);
-  }
-
-  if (data.humidity > MAX_HEALTHY_HUMIDITY){
-    print_line("HUMIDITY: HIGH", 0, 55, 1);
-  }
-  else if (data.humidity < MIN_HEALTHY_HUMIDITY){
-    print_line("HUMIDITY: LOW", 0, 55, 1);
-  }
-  else {
-    print_line("HUMIDITY: OK", 0, 55, 1);
-  }
-
-  if (data.temperature > MAX_HEALTHY_TEMPERATURE || data.temperature < MIN_HEALTHY_TEMPERATURE || data.humidity > MAX_HEALTHY_HUMIDITY || data.humidity < MIN_HEALTHY_HUMIDITY) {
-    digitalWrite(LED_1, HIGH);
-  } else {
-    digitalWrite(LED_1, LOW);
-  }
-}
 
