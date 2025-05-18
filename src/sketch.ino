@@ -188,64 +188,6 @@ void loop() {
 
 }
 
-void sampleLightIntensity() {
-  // Read LDR and accumulate values at ts interval
-  //static unsigned long lastSampleTime = 0;
-  unsigned long now = millis();
-  
-  if (now - lastSampleTime >= (unsigned long)ts * 1000) {
-    lastSampleTime = now;
-    int ldrVal = analogRead(LDRPIN);
-    ldrSum += ldrVal;
-    ldrCount++;
-    Serial.println("Sampled LDR: " + String(ldrVal));
-  }
-}
-
-float avgLightIntensity() {
-  // Calculate and format intensity with 3 decimal places
-  if (ldrCount == 0) return 0.0;
-  
-  float avgLdr = static_cast<float>(ldrSum) / ldrCount;
-  float intensity = avgLdr / 4095.0f;
-  intensity = 1 - round(intensity * 1000) / 1000.0f; // Force 3 decimals
-  
-  return intensity;
-}
-
-void adjustWindowServo(float intensity) {
-  // Calculate servo angle based on latest readings
-  TempAndHumidity data = dhtSensor.getTempAndHumidity();
-  float T = isnan(data.temperature) ? Tmed : data.temperature;
-
-  // Use the latest parameters from sliders
-  float lnFactor = 0;
-  if (tu > ts && ts > 0) {  // Ensure valid values for logarithm
-    lnFactor = log((float)ts / tu);  // This will be negative when ts < tu
-  }
-
-  float factor = abs (intensity * gammaFactor * lnFactor * (T / Tmed));
-  
-  factor = constrain(factor, 0.0f, 1.0f);
-  float theta = thetaOffset + (180.0f - thetaOffset) * factor;
-  
-  theta = constrain(theta, thetaOffset, 180.0f);
-  windowServo.write((int)theta);
-
-    // Add detailed debugging
-    Serial.println("DEBUG VALUES:");
-    Serial.println("Intensity (I): " + String(intensity, 4));
-    Serial.println("gammaFactor (γ): " + String(gammaFactor, 4));
-    Serial.println("ts: " + String(ts) + "s, tu: " + String(tu) + "s");
-    Serial.println("ln(ts/tu): " + String(lnFactor, 4));
-    Serial.println("T: " + String(T, 2) + "°C, Tmed: " + String(Tmed, 2) + "°C");
-    Serial.println("T/Tmed: " + String(T/Tmed, 4));
-    Serial.println("Complete factor: " + String(factor, 4));
-    Serial.println("thetaOffset: " + String(thetaOffset) + "°");
-    Serial.println("Final servo angle (θ): " + String(theta, 1) + "°");
-  
-  Serial.println("Servo θ: " + String(theta, 1) + "° | T: " + String(T, 1) + "°C");
-}
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   // Convert payload to a null-terminated string
@@ -340,14 +282,65 @@ void connectToBroker() {
   }
 }
 
-void buzzerOn(bool on) {
-  if (on) {
-    tone(BUZZER, notes[0], 1000); // Play a note for 1 second
-  }
-  else {
-    noTone(BUZZER); // Stop the buzzer
+void sampleLightIntensity() {
+  // Read LDR and accumulate values at ts interval
+  //static unsigned long lastSampleTime = 0;
+  unsigned long now = millis();
+  
+  if (now - lastSampleTime >= (unsigned long)ts * 1000) {
+    lastSampleTime = now;
+    int ldrVal = analogRead(LDRPIN);
+    ldrSum += ldrVal;
+    ldrCount++;
+    Serial.println("Sampled LDR: " + String(ldrVal));
   }
 }
+
+float avgLightIntensity() {
+  // Calculate and format intensity with 3 decimal places
+  if (ldrCount == 0) return 0.0;
+  
+  float avgLdr = static_cast<float>(ldrSum) / ldrCount;
+  float intensity = avgLdr / 4095.0f;
+  intensity = 1 - round(intensity * 1000) / 1000.0f; // Force 3 decimals
+  
+  return intensity;
+}
+
+void adjustWindowServo(float intensity) {
+  // Calculate servo angle based on latest readings
+  TempAndHumidity data = dhtSensor.getTempAndHumidity();
+  float T = isnan(data.temperature) ? Tmed : data.temperature;
+
+  // Use the latest parameters from sliders
+  float lnFactor = 0;
+  if (tu > ts && ts > 0) {  // Ensure valid values for logarithm
+    lnFactor = log((float)ts / tu);  // This will be negative when ts < tu
+  }
+
+  float factor = abs (intensity * gammaFactor * lnFactor * (T / Tmed));
+  
+  factor = constrain(factor, 0.0f, 1.0f);
+  float theta = thetaOffset + (180.0f - thetaOffset) * factor;
+  
+  theta = constrain(theta, thetaOffset, 180.0f);
+  windowServo.write((int)theta);
+
+    // Add detailed debugging
+    // Serial.println("DEBUG VALUES:");
+    // Serial.println("Intensity (I): " + String(intensity, 4));
+    // Serial.println("gammaFactor (γ): " + String(gammaFactor, 4));
+    // Serial.println("ts: " + String(ts) + "s, tu: " + String(tu) + "s");
+    // Serial.println("ln(ts/tu): " + String(lnFactor, 4));
+    // Serial.println("T: " + String(T, 2) + "°C, Tmed: " + String(Tmed, 2) + "°C");
+    // Serial.println("T/Tmed: " + String(T/Tmed, 4));
+    // Serial.println("Complete factor: " + String(factor, 4));
+    // Serial.println("thetaOffset: " + String(thetaOffset) + "°");
+    // Serial.println("Final servo angle (θ): " + String(theta, 1) + "°");
+  
+  Serial.println("Servo θ: " + String(theta, 1) + "° | T: " + String(T, 1) + "°C");
+}
+
 
 void print_line(String text, int column, int row, int textSize) {
   display.setTextSize(textSize);
